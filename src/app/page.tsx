@@ -1,4 +1,3 @@
-// app/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -32,8 +31,11 @@ interface AnimatedBit {
   bit: number;
   basis: string;
   position: number;
-  stage: 'alice' | 'transit' | 'eve' | 'eve-transit' | 'bob' | 'complete';
+  stage: 'alice' | 'transit' | 'bob' | 'complete' | 'eve_intercept' | 'eve_return';
   qubit: string;
+  intercepted: boolean;
+  eveBit?: number;
+  eveBasis?: string;
 }
 
 export default function BB84Simulator() {
@@ -110,6 +112,9 @@ export default function BB84Simulator() {
         position: 0,
         stage: 'alice',
         qubit: data.encoded_qubits[i],
+        intercepted: eveEnabled && data.eve_actions?.intercepted[i] || false,
+        eveBit: eveEnabled && data.eve_actions?.measurements[i] !== null ? data.eve_actions?.measurements[i] as number : undefined,
+        eveBasis: eveEnabled && data.eve_actions?.bases[i] !== null ? data.eve_actions?.bases[i] as string : undefined,
       });
     }
     
@@ -131,14 +136,21 @@ export default function BB84Simulator() {
 
           // Stage progression
           if (bit.stage === 'alice' && newPosition >= 100) {
-            newStage = eveEnabled && results.eve_actions?.intercepted[bit.index] ? 'eve' : 'transit';
+            if (bit.intercepted) {
+              newStage = 'eve_intercept';
+            } else {
+              newStage = 'transit';
+            }
             newPosition = 0;
-          } else if (bit.stage === 'eve' && newPosition >= 100) {
-            newStage = 'eve-transit';
+          } else if (bit.stage === 'eve_intercept' && newPosition >= 100) {
+            newStage = 'eve_return';
             newPosition = 0;
-          } else if ((bit.stage === 'transit' || bit.stage === 'eve-transit') && newPosition >= 100) {
+          } else if (bit.stage === 'eve_return' && newPosition >= 100) {
+            newStage = 'transit';
+            newPosition = 0;
+          } else if (bit.stage === 'transit' && newPosition >= 100) {
             newStage = 'bob';
-            newPosition = 100;
+            newPosition = 0; // Reset to 0 to allow animation at Bob's side
           } else if (bit.stage === 'bob' && newPosition >= 100) {
             newStage = 'complete';
           }
@@ -210,6 +222,8 @@ export default function BB84Simulator() {
                 className="w-full px-4 py-2 border text-black border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 min="10"
                 max="500"
+                title="Number of Bits"
+                aria-label="Number of Bits"
               />
               <p className="text-xs text-gray-500 mt-1">Range: 10-500 bits</p>
             </div>
@@ -242,6 +256,8 @@ export default function BB84Simulator() {
                   value={eveInterceptionRate * 100}
                   onChange={(e) => setEveInterceptionRate(parseInt(e.target.value) / 100)}
                   className="w-full"
+                  title="Eve's Interception Rate"
+                  aria-label="Eve's Interception Rate"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
                   <span>0%</span>
@@ -264,6 +280,8 @@ export default function BB84Simulator() {
                 value={simulationSpeed}
                 onChange={(e) => setSimulationSpeed(parseFloat(e.target.value))}
                 className="w-full"
+                title="Animation Speed"
+                aria-label="Animation Speed"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
                 <span>0.5x (Slow)</span>
@@ -313,7 +331,7 @@ export default function BB84Simulator() {
               </h2>
             </div>
 
-            <div className="relative h-100 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 overflow-hidden">
+            <div className="relative h-[400px] bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 overflow-hidden">
               {/* Alice */}
               <div className="absolute left-8 top-1/2 transform -translate-y-1/2">
                 <div className="text-center">
@@ -326,7 +344,7 @@ export default function BB84Simulator() {
 
               {/* Eve (if enabled) */}
               {eveEnabled && (
-                <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                <div className="absolute left-1/2 bottom-4 transform -translate-x-1/2">
                   <div className="text-center">
                     <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center text-white font-bold text-xl mb-2">
                       E
@@ -348,45 +366,81 @@ export default function BB84Simulator() {
 
               {/* Animated Bits */}
               {animatedBits.map((bit, idx) => {
-                let xPos = 0;
-                let yOffset = idx * 20 - 40;
-
-                if (bit.stage === 'alice') {
-                  xPos = 80 + (bit.position * (eveEnabled ? 2.5 : 5));
-                } else if (bit.stage === 'eve' || bit.stage === 'transit') {
-                  const startX = eveEnabled ? 330 : 80;
-                  const endX = eveEnabled ? 580 : 580;
-                  xPos = startX + (bit.position * (endX - startX) / 100);
-                } else if (bit.stage === 'eve-transit') {
-                  xPos = 330 + (bit.position * 2.5);
-                } else if (bit.stage === 'bob' || bit.stage === 'complete') {
-                  xPos = 1100;
-                }
-
+                const ALICE_X = 100;
+                const CENTER_X = 600;
+                const BOB_X = 1100;
+                const EVE_Y_OFFSET = 140; // Pixels down from center line
                 const isActive = idx === currentAnimationIndex;
 
+                let xPos = 0;
+                
+                // Center the stack vertically based on total number of animated bits
+                const stackHeight = animatedBits.length * 20;
+                const stackStartY = -(stackHeight / 2) + 10;
+                const stackY = stackStartY + idx * 20;
+                
+                let yOffset = stackY;
+
+                // Determine content and color
+                let displayBit = bit.bit;
+                let displayBasis = bit.basis;
+                let displayColor = "bg-indigo-500";
+
+                // If it has passed through Eve (or is at Eve), show Eve's data if intercepted
+                if (bit.intercepted && (bit.stage === 'eve_return' || bit.stage === 'transit' || bit.stage === 'bob' || bit.stage === 'complete')) {
+                    displayBit = bit.eveBit ?? bit.bit;
+                    displayBasis = bit.eveBasis ?? bit.basis;
+                    displayColor = "bg-red-500";
+                }
+
+                // Calculate main qubit position and Y-offset for smooth animation
+                if (bit.stage === 'alice') {
+                  // Alice to Center (Move from stack to line)
+                  xPos = ALICE_X + (bit.position / 100) * (CENTER_X - ALICE_X);
+                  if (isActive) yOffset = 0;
+                } else if (bit.stage === 'eve_intercept') {
+                  // Center to Eve (Down)
+                  xPos = CENTER_X;
+                  yOffset = (bit.position / 100) * EVE_Y_OFFSET;
+                } else if (bit.stage === 'eve_return') {
+                  // Eve to Center (Up)
+                  xPos = CENTER_X;
+                  yOffset = EVE_Y_OFFSET * (1 - bit.position / 100);
+                } else if (bit.stage === 'transit') {
+                  // Center to Bob (Stay on line)
+                  xPos = CENTER_X + (bit.position / 100) * (BOB_X - CENTER_X);
+                  yOffset = 0;
+                } else if (bit.stage === 'bob') {
+                  // At Bob (Move from line to stack)
+                  xPos = BOB_X;
+                  yOffset = stackY * (bit.position / 100);
+                } else if (bit.stage === 'complete') {
+                  xPos = BOB_X;
+                  yOffset = stackY;
+                }
+
                 return (
-                  <div
-                    key={bit.index}
-                    className={`absolute transition-all duration-100 ${isActive ? 'z-10' : 'z-0'}`}
-                    style={{
-                      left: `${xPos}px`,
-                      top: `50%`,
-                      transform: `translateY(calc(-50% + ${yOffset}px))`,
-                    }}
-                  >
-                    <div className={`relative ${isActive ? 'scale-110' : 'scale-90 opacity-50'}`}>
-                      <div className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center text-white font-bold shadow-lg ${
-                        bit.stage === 'eve' || bit.stage === 'eve-transit' ? 'bg-red-500' : 'bg-indigo-500'
-                      }`}>
-                        <div className="text-lg">{bit.bit}</div>
-                        <div className="text-xs">{bit.basis}</div>
-                      </div>
-                      {isActive && (
-                        <div className="absolute -top-8 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-                          {bit.qubit}
+                  <div key={bit.index}>
+                    {/* Main Qubit */}
+                    <div
+                      className={`absolute transition-all duration-100 ${isActive ? 'z-10' : 'z-0'}`}
+                      style={{
+                        left: `${xPos}px`,
+                        top: `50%`,
+                        transform: `translate(-50%, calc(-50% + ${yOffset}px))`,
+                      }}
+                    >
+                      <div className={`relative ${isActive ? 'scale-110' : 'scale-90 opacity-50'}`}>
+                        <div className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center text-white font-bold shadow-lg ${displayColor} transition-colors duration-300`}>
+                          <div className="text-lg">{displayBit}</div>
+                          <div className="text-xs">{displayBasis}</div>
                         </div>
-                      )}
+                        {isActive && (
+                          <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                            {bit.qubit}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -399,13 +453,13 @@ export default function BB84Simulator() {
                     <polygon points="0 0, 10 3, 0 6" fill="#94a3b8" />
                   </marker>
                 </defs>
-                {eveEnabled ? (
-                  <>
-                    <line x1="100" y1="50%" x2="530" y2="50%" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" markerEnd="url(#arrowhead)" />
-                    <line x1="650" y1="50%" x2="1100" y2="50%" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" markerEnd="url(#arrowhead)" />
-                  </>
-                ) : (
-                  <line x1="100" y1="50%" x2="1100" y2="50%" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" markerEnd="url(#arrowhead)" />
+                
+                {/* Main Channel */}
+                <line x1="100" y1="50%" x2="1100" y2="50%" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" markerEnd="url(#arrowhead)" />
+                
+                {/* Eve Interception Path */}
+                {eveEnabled && (
+                  <line x1="600" y1="50%" x2="600" y2="85%" stroke="#ef4444" strokeWidth="2" strokeDasharray="3,3" opacity="0.5" />
                 )}
               </svg>
             </div>
@@ -535,6 +589,8 @@ export default function BB84Simulator() {
                       setCurrentPage(1);
                     }}
                     className="px-3 py-1 border border-gray-300 text-black rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                    title="Items per page"
+                    aria-label="Items per page"
                   >
                     <option value={10}>10</option>
                     <option value={25}>25</option>
