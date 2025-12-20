@@ -200,7 +200,7 @@ export default function BB84Simulator() {
               </p>
             </div>
             <Link 
-              href="/rsa"
+              href="/RSA"
               className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center gap-2"
             >
               <Lock size={20} />
