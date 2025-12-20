@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, Play, Info, Loader2, Settings, ChevronLeft, ChevronRight, Zap, Gauge } from 'lucide-react';
+import { Shield, ShieldAlert, Play, Info, Loader2, Settings, ChevronLeft, ChevronRight, Zap, Gauge, Lock } from 'lucide-react';
+import Link from 'next/link';
 
 interface BB84Response {
   alice_bits: number[];
@@ -198,6 +199,13 @@ export default function BB84Simulator() {
                 Simulate quantum cryptography with animated visualization
               </p>
             </div>
+            <Link 
+              href="/rsa"
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Lock size={20} />
+              Compare with RSA →
+            </Link>
           </div>
         </header>
 
