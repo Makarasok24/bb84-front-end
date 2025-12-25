@@ -447,20 +447,23 @@ export default function RSASimulator() {
               </div>
             </div>
 
-            {/* Eve (if enabled) */}
+            {/* Eve (if enabled) - Positioned above the channel as passive eavesdropper */}
             {eveEnabled && (
-              <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+              <div className="absolute left-1/2 top-8 transform -translate-x-1/2 flex flex-col items-center">
                 <div className={`w-16 h-16 bg-red-500 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all ${
-                  currentStage === 'eve-intercepting' ? 'ring-4 ring-red-300 scale-110' : ''
+                  currentStage === 'eve-intercepting' ? 'ring-4 ring-red-300 scale-110 shadow-lg shadow-red-500/50' : ''
                 }`}>
                   E
                 </div>
-                <div className="text-sm font-semibold text-gray-700 mt-2">Eve</div>
+                <div className="text-sm font-semibold text-gray-700 mt-2">Eve (Eavesdropper)</div>
                 {eveIntercepted && (
-                  <div className="mt-2 px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">
-                    Copied message
+                  <div className="mt-2 px-3 py-1 bg-red-100 border-2 border-red-400 rounded text-xs text-red-800 font-semibold animate-pulse">
+                    ⚠️ Passively copied data
                   </div>
                 )}
+                <div className="text-xs text-gray-500 mt-1 text-center max-w-[120px]">
+                  (Listening from outside)
+                </div>
               </div>
             )}
 
@@ -476,20 +479,65 @@ export default function RSASimulator() {
               </div>
             </div>
 
-            {/* Connection Channel */}
+            {/* Connection Channel - Single direct line from Alice to Bob */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none">
               <defs>
                 <marker id="arrowhead-rsa" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
                   <polygon points="0 0, 10 3, 0 6" fill="#94a3b8" />
                 </marker>
+                <marker id="arrowhead-eve" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                  <polygon points="0 0, 8 3, 0 6" fill="#ef4444" />
+                </marker>
               </defs>
-              {eveEnabled ? (
+              {/* Main communication channel: Alice → Bob (always single direct line) */}
+              <line 
+                x1="100" 
+                y1="50%" 
+                x2="calc(100% - 100px)" 
+                y2="50%" 
+                stroke="#94a3b8" 
+                strokeWidth="3" 
+                strokeDasharray="5,5" 
+                markerEnd="url(#arrowhead-rsa)" 
+              />
+              
+              {/* Eve's interception line - shows passive wiretapping */}
+              {eveEnabled && currentStage !== 'idle' && (
                 <>
-                  <line x1="100" y1="50%" x2="48%" y2="50%" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" markerEnd="url(#arrowhead-rsa)" />
-                  <line x1="52%" y1="50%" x2="calc(100% - 100px)" y2="50%" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" markerEnd="url(#arrowhead-rsa)" />
+                  {/* Vertical "tap" line from channel to Eve */}
+                  <line 
+                    x1="50%" 
+                    y1="50%" 
+                    x2="50%" 
+                    y2="90" 
+                    stroke="#ef4444" 
+                    strokeWidth="2" 
+                    strokeDasharray="3,3" 
+                    className={currentStage === 'eve-intercepting' ? 'animate-pulse' : ''}
+                    opacity={currentStage === 'eve-intercepting' ? '1' : '0.5'}
+                  />
+                  {/* Arrow pointing up to Eve */}
+                  <line 
+                    x1="50%" 
+                    y1="90" 
+                    x2="50%" 
+                    y2="95" 
+                    stroke="#ef4444" 
+                    strokeWidth="2" 
+                    markerEnd="url(#arrowhead-eve)" 
+                    className={currentStage === 'eve-intercepting' ? 'animate-pulse' : ''}
+                    opacity={currentStage === 'eve-intercepting' ? '1' : '0.5'}
+                  />
+                  {/* Small circle at tap point */}
+                  <circle 
+                    cx="50%" 
+                    cy="50%" 
+                    r="5" 
+                    fill="#ef4444" 
+                    className={currentStage === 'eve-intercepting' ? 'animate-ping' : ''}
+                    opacity={currentStage === 'eve-intercepting' ? '0.8' : '0.4'}
+                  />
                 </>
-              ) : (
-                <line x1="100" y1="50%" x2="calc(100% - 100px)" y2="50%" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,5" markerEnd="url(#arrowhead-rsa)" />
               )}
             </svg>
 
@@ -602,13 +650,14 @@ export default function RSASimulator() {
               )}
               {currentStage === 'transmitting' && (
                 <>
-                  The <strong className="text-orange-600">encrypted message</strong> travels through the classical communication channel. 
+                  The <strong className="text-orange-600">encrypted message</strong> travels <strong>directly from Alice to Bob</strong> through the classical communication channel. 
                   The channel is <strong>stable</strong> - no quantum effects, no noise, no disturbance.
                 </>
               )}
               {currentStage === 'eve-intercepting' && (
                 <>
-                  <strong className="text-red-600">Eve intercepts and copies</strong> the encrypted message in transit. 
+                  <strong className="text-red-600">Eve passively intercepts and copies</strong> the encrypted message as it passes through the channel. 
+                  She is <strong>NOT part of the communication path</strong> - she's like a wiretap, listening from the outside. 
                   However, she sees only <strong>scrambled data</strong> she cannot decrypt. 
                   <strong className="text-red-600"> CRITICAL: Eve's interception is NOT DETECTED.</strong> Alice and Bob have no way to know Eve was listening.
                 </>
@@ -1032,8 +1081,9 @@ export default function RSASimulator() {
                   (internet, phone line, etc.). The channel is stable with no quantum effects.
                 </div>
                 <div className="pl-4 border-l-4 border-red-300">
-                  <strong>Step 4 - Interception (if Eve is present):</strong> Eve can intercept and copy the encrypted message. 
-                  She sees only scrambled data she cannot read. <strong className="text-red-600">Crucially: This interception leaves NO trace.</strong>
+                  <strong>Step 4 - Interception (if Eve is present):</strong> Eve <strong>passively wiretaps</strong> the communication channel and copies the encrypted message as it passes by. 
+                  She is <strong>NOT in the middle</strong> of Alice and Bob's communication - she listens from outside, like tapping a phone line. 
+                  She sees only scrambled data she cannot read. <strong className="text-red-600">Crucially: This interception leaves NO trace and is completely undetectable.</strong>
                 </div>
                 <div className="pl-4 border-l-4 border-purple-300">
                   <strong>Step 5 - Decryption:</strong> Bob receives the encrypted message and uses his <strong>private key</strong> to decrypt it, 

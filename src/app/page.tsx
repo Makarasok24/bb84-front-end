@@ -126,7 +126,7 @@ export default function BB84Simulator() {
   useEffect(() => {
     if (!isAnimating || !results) return;
 
-    const speed = 50 / simulationSpeed; // milliseconds per frame
+    const speed = 20 / simulationSpeed; // milliseconds per frame
     const interval = setInterval(() => {
       setAnimatedBits((prevBits) => {
         return prevBits.map((bit, idx) => {
